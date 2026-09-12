@@ -311,14 +311,18 @@ input:focus-visible,select:focus-visible,button:focus-visible,textarea:focus-vis
 
    Only the PUBLISHABLE key (sb_publishable_…) goes here. Never the secret key:
    this file is served publicly from GitHub Pages and anyone can read it.
+
+   THE TWO EMPTY LINES BELOW ARE THE WHOLE JOB. The quickest place to copy them
+   from is your own screen: open the page on the machine where the console already
+   works, go to Connection, and the boxes there hold the exact values.
    ============================================================================ */
 var DEFAULTS = {
-  url:         '',   // https://xxxxxxxxxxxx.supabase.co
-  key:         '',   // sb_publishable_...
-  hook:        '',   // https://....app.n8n.cloud/webhook/madama-engine-run
-  fn_telegram: '',   // the Telegram function slug, e.g. bright-processor
-  fn_rewrite:  '',   // the rewrite function slug
-  who:         ''    // the name recorded on approvals, e.g. Khater
+  url:         'https://eviqqynpcmyukaijelxg.supabase.co',
+  key:         'sb_publishable_8ie-cUObKlxbhqqh_pwuxg_OxyNf4b8',
+  hook:        'https://jacob-89.app.n8n.cloud/webhook/madama-engine-run',
+  fn_telegram: 'bright-processor',   // the slug at the end of the Telegram function's URL
+  fn_rewrite:  '',   // stays empty until the rewrite function is deployed
+  who:         'Khater'              // the name recorded on approvals
 };
 
 var $ = function(s){ return document.querySelector(s); };
