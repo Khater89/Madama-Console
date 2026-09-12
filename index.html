@@ -155,7 +155,7 @@ input:focus-visible,select:focus-visible,button:focus-visible,textarea:focus-vis
     <div class="secthead"><div class="eyebrow">Marketing</div><h2>New order</h2></div>
     <div class="panel" id="needCfg" hidden>
       <h2>Not connected yet</h2>
-      <p class="sub">This page has no database to talk to, so nothing below will load. Open <strong>Connection</strong> in the left menu and paste your Supabase URL and publishable key — it takes about thirty seconds and is stored in this browser only.</p>
+      <p class="sub">This copy of the page has no database to talk to, so nothing below will load. The connection normally comes built in — fill the <code>DEFAULTS</code> block at the top of the page file and re-upload it, or open <strong>Connection</strong> in the left menu to set it for this browser only.</p>
       <button class="btn primary" onclick="show('setup')">Open Connection</button>
     </div>
     <div class="panel">
@@ -261,7 +261,7 @@ input:focus-visible,select:focus-visible,button:focus-visible,textarea:focus-vis
   <section id="v-setup" hidden>
     <div class="panel">
       <h2>Connection</h2>
-      <p class="sub">Stored in this browser only. The publishable key is safe here — row level security decides what it may do.</p>
+      <p class="sub">These come from the <code>DEFAULTS</code> block at the top of the page file, so the link works for anyone who opens it. Anything you change here is saved in <em>this browser only</em> and overrides the built-in values until you press “Use built-in settings”.</p>
       <div class="grid">
         <label><span class="lbl">Supabase URL</span><input id="cfgUrl" placeholder="https://xxxx.supabase.co"></label>
         <label><span class="lbl">Publishable key</span><input id="cfgKey" placeholder="sb_publishable_…"></label>
@@ -280,11 +280,13 @@ input:focus-visible,select:focus-visible,button:focus-visible,textarea:focus-vis
         <button class="btn primary" id="saveCfg">Save &amp; connect</button>
         <button class="btn ghost" id="testCfg">Test connection</button>
         <button class="btn ghost" id="checkFns">Check Edge Functions</button>
+        <button class="btn ghost" id="useBuiltIn" title="Forget what this browser saved and go back to the settings built into the page">Use built-in settings</button>
       </div>
       <div id="cfgNote"></div>
       <div id="fnNote"></div>
       <div class="note bad" style="margin-top:16px">
-        <strong>Never paste the secret key here.</strong> <code>sb_secret_…</code> bypasses row level security completely and belongs only in n8n. This page is a browser page — anything in it is readable by anyone who opens it.
+        <strong>Never paste the secret key here, or into the file.</strong> <code>sb_secret_…</code> bypasses row level security completely and belongs only in n8n.<br>
+        This page is served publicly from GitHub Pages, so the publishable key inside it is public too. Row level security is the only thing deciding what that key may do — and right now it may read, edit, approve and delete content. Anyone who has the link can do all of that.
       </div>
     </div>
   </section>
@@ -296,6 +298,29 @@ input:focus-visible,select:focus-visible,button:focus-visible,textarea:focus-vis
 
 <script>
 'use strict';
+
+/* ============================================================================
+   BUILT-IN CONNECTION  —  fill these five lines in, commit, and the page is
+   connected for everyone who opens the link.
+
+   Why this block has to exist: the TABLES live in Supabase and are shared by
+   everyone, but the settings that REACH Supabase cannot themselves live in
+   Supabase — the page needs the address and the key before it can read a single
+   row. Until now they sat in each browser's own storage, which is why the page
+   was connected on your machine and empty on anyone else's.
+
+   Only the PUBLISHABLE key (sb_publishable_…) goes here. Never the secret key:
+   this file is served publicly from GitHub Pages and anyone can read it.
+   ============================================================================ */
+var DEFAULTS = {
+  url:         '',   // https://xxxxxxxxxxxx.supabase.co
+  key:         '',   // sb_publishable_...
+  hook:        '',   // https://....app.n8n.cloud/webhook/madama-engine-run
+  fn_telegram: '',   // the Telegram function slug, e.g. bright-processor
+  fn_rewrite:  '',   // the rewrite function slug
+  who:         ''    // the name recorded on approvals, e.g. Khater
+};
+
 var $ = function(s){ return document.querySelector(s); };
 var $$ = function(s){ return Array.prototype.slice.call(document.querySelectorAll(s)); };
 var CFG = {}, BRANDS = [], OPTIONS = [];
@@ -425,9 +450,15 @@ function checkFns(){
   });
 }
 
-/* ---------- config ---------- */
+/* ---------- config ----------
+   The built-in settings are the floor; anything saved in this browser sits on top
+   of them, so one person can point their own copy somewhere else without changing
+   the file everyone else opens. "Use built-in settings" clears the local override. */
 function loadCfg(){
-  try { CFG = JSON.parse(localStorage.getItem('madama.cfg') || '{}'); } catch(e){ CFG = {}; }
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem('madama.cfg') || '{}'); } catch(e){}
+  CFG = {};
+  Object.keys(DEFAULTS).forEach(function(k){ CFG[k] = String(saved[k] || DEFAULTS[k] || '').trim(); });
   $('#cfgUrl').value = CFG.url || '';
   $('#cfgKey').value = CFG.key || '';
   $('#cfgHook').value = CFG.hook || '';
@@ -1343,6 +1374,16 @@ $('#testCfg').addEventListener('click', function(){
     .catch(function(e){ note($('#cfgNote'),'bad', esc(e.message)); });
 });
 $('#checkFns').addEventListener('click', checkFns);
+$('#useBuiltIn').addEventListener('click', function(){
+  try { localStorage.removeItem('madama.cfg'); } catch(e){}
+  loadCfg();
+  if (!CFG.url || !CFG.key){
+    note($('#cfgNote'), 'bad', 'There are no built-in settings in this copy of the page — fill in the DEFAULTS block at the top of the file.');
+    return;
+  }
+  note($('#cfgNote'), 'good', 'Back to the settings built into the page.');
+  boot();
+});
 $('#reloadReview').addEventListener('click', function(){ withBusy(this, loadReview); });
 $('#reloadPublish').addEventListener('click', function(){ withBusy(this, loadPublish); });
 $('#reloadDone').addEventListener('click', function(){ withBusy(this, loadDone); });
