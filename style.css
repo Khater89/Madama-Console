@@ -1,0 +1,520 @@
+/* ============================================================================
+   MADAMA CONSOLE — style.css
+   ----------------------------------------------------------------------------
+   HTML5 / CSS3 only. No framework, no preprocessor, no utility classes.
+
+   Identity: hi-vis amber on cool steel — the colours of the trade this console
+   serves. Glass surfaces float over a slow-moving field of light; motion is
+   used to show change, never for its own sake.
+
+   CONTENTS
+     1. Tokens .......... colour, type, elevation, three theme states
+     2. Base ............ reset, typography, motion primitives
+     3. Backdrop ........ the light field behind the glass
+     4. Shell ........... rail, work area, sticky section head
+     5. Components ...... panels, cards, buttons, chips, notes, tags, tables
+     6. Views ........... the bento layouts per screen
+     7. Motion .......... entrance, scroll, pointer, reduced-motion
+   ========================================================================== */
+
+@layer tokens, base, backdrop, shell, components, views, motion;
+
+/* ---------------------------------------------------------------- 1. TOKENS */
+@layer tokens {
+  :root{
+    color-scheme: light;
+
+    --ui:   Archivo, "Helvetica Neue", system-ui, sans-serif;
+    --body: "Public Sans", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+    /* Steel neutrals — each carries a trace of the same cool hue, so the greys
+       read as chosen rather than inherited from the browser. */
+    --ground:    oklch(95%   0.009 248);
+    --ground-2:  oklch(90.5% 0.016 248);
+    --panel:     oklch(99.4% 0.002 248);
+    --panel-2:   oklch(97.2% 0.006 248);
+    --line:      oklch(87%   0.011 248);
+    --line-soft: oklch(92.5% 0.008 248);
+    --ink:       oklch(23%   0.023 252);
+    --ink-2:     oklch(44%   0.019 252);
+    --ink-3:     oklch(59%   0.015 252);
+
+    --accent:      oklch(57%   0.132 62);
+    --accent-2:    oklch(64%   0.118 42);
+    --accent-soft: color-mix(in oklab, var(--accent) 13%, var(--panel));
+    --good:        oklch(50%   0.108 158);
+    --good-soft:   color-mix(in oklab, var(--good) 13%, var(--panel));
+    --crit:        oklch(51%   0.168 27);
+    --crit-soft:   color-mix(in oklab, var(--crit) 12%, var(--panel));
+
+    /* Glass: opaque enough that body text never fights the field behind it. */
+    --glass:      oklch(100% 0 0 / .80);
+    --glass-2:    oklch(100% 0 0 / .58);
+    --glass-line: oklch(100% 0 0 / .92);
+    --blur: 18px;
+
+    --radius: 16px;
+    --radius-sm: 10px;
+    --rail: 248px;
+
+    --shadow:      0 1px 2px oklch(23% .02 252 / .05), 0 10px 28px -18px oklch(23% .02 252 / .32);
+    --shadow-lift: 0 1px 2px oklch(23% .02 252 / .07), 0 24px 48px -24px oklch(23% .02 252 / .45);
+    --glow: 0 0 0 1px color-mix(in oklab, var(--accent) 38%, transparent),
+            0 8px 34px -10px color-mix(in oklab, var(--accent) 45%, transparent);
+
+    --ease: cubic-bezier(.2,.7,.3,1);
+    --fast: .14s;
+    --slow: .42s;
+  }
+
+  /* Three theme states: stamped dark, stamped light, and the unstamped default
+     where only the operating system decides. Tokens are redefined here and
+     nowhere else — no component is ever styled inside a theme block. */
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){ color-scheme: dark;
+      --ground:    oklch(16%   0.016 252);
+      --ground-2:  oklch(12.5% 0.018 254);
+      --panel:     oklch(21%   0.018 252);
+      --panel-2:   oklch(25%   0.018 252);
+      --line:      oklch(32%   0.022 252);
+      --line-soft: oklch(27%   0.020 252);
+      --ink:       oklch(94%   0.008 248);
+      --ink-2:     oklch(77%   0.016 248);
+      --ink-3:     oklch(62%   0.017 248);
+      --accent:      oklch(79% 0.130 68);
+      --accent-2:    oklch(74% 0.125 45);
+      --accent-soft: color-mix(in oklab, var(--accent) 17%, var(--panel));
+      --good:        oklch(77% 0.118 160);
+      --good-soft:   color-mix(in oklab, var(--good) 16%, var(--panel));
+      --crit:        oklch(73% 0.132 26);
+      --crit-soft:   color-mix(in oklab, var(--crit) 16%, var(--panel));
+      --glass:      oklch(100% 0 0 / .055);
+      --glass-2:    oklch(100% 0 0 / .035);
+      --glass-line: oklch(100% 0 0 / .10);
+      --shadow:      0 1px 2px oklch(0% 0 0 / .5),  0 14px 34px -22px oklch(0% 0 0 / .9);
+      --shadow-lift: 0 1px 2px oklch(0% 0 0 / .55), 0 30px 56px -26px oklch(0% 0 0 / .95);
+    }
+  }
+  :root[data-theme="dark"]{ color-scheme: dark;
+    --ground:    oklch(16%   0.016 252);
+    --ground-2:  oklch(12.5% 0.018 254);
+    --panel:     oklch(21%   0.018 252);
+    --panel-2:   oklch(25%   0.018 252);
+    --line:      oklch(32%   0.022 252);
+    --line-soft: oklch(27%   0.020 252);
+    --ink:       oklch(94%   0.008 248);
+    --ink-2:     oklch(77%   0.016 248);
+    --ink-3:     oklch(62%   0.017 248);
+    --accent:      oklch(79% 0.130 68);
+    --accent-2:    oklch(74% 0.125 45);
+    --accent-soft: color-mix(in oklab, var(--accent) 17%, var(--panel));
+    --good:        oklch(77% 0.118 160);
+    --good-soft:   color-mix(in oklab, var(--good) 16%, var(--panel));
+    --crit:        oklch(73% 0.132 26);
+    --crit-soft:   color-mix(in oklab, var(--crit) 16%, var(--panel));
+    --glass:      oklch(100% 0 0 / .055);
+    --glass-2:    oklch(100% 0 0 / .035);
+    --glass-line: oklch(100% 0 0 / .10);
+    --shadow:      0 1px 2px oklch(0% 0 0 / .5),  0 14px 34px -22px oklch(0% 0 0 / .9);
+    --shadow-lift: 0 1px 2px oklch(0% 0 0 / .55), 0 30px 56px -26px oklch(0% 0 0 / .95);
+  }
+}
+
+/* ------------------------------------------------------------------ 2. BASE */
+@layer base {
+  *, *::before, *::after{ box-sizing: border-box }
+  html{ scrollbar-gutter: stable; scroll-behavior: smooth }
+  body{
+    margin:0; min-height:100dvh; background: var(--ground); color: var(--ink);
+    font: 15px/1.6 var(--body); -webkit-font-smoothing: antialiased;
+    accent-color: var(--accent); overflow-x: hidden;
+  }
+  h1,h2,h3{ font-family: var(--ui); margin:0; text-wrap: balance; letter-spacing:-.012em }
+  h1{ font-size:21px; font-weight:700; letter-spacing:-.026em }
+  h2{ font-size:16.5px; font-weight:600 }
+  h3{ font-size:13px; font-weight:600 }
+  p{ text-wrap: pretty }
+  img, video{ max-width:100% }
+  code{ font:500 12.5px var(--mono); background: var(--panel-2);
+        border:1px solid var(--line-soft); border-radius:5px; padding:1px 5px }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:3px; border-radius:6px }
+  [hidden]{ display:none !important }
+
+  .num{ font-family: var(--mono); font-variant-numeric: tabular-nums }
+  .eyebrow{ font:600 10.5px/1.4 var(--ui); letter-spacing:.16em;
+            text-transform:uppercase; color: var(--ink-3) }
+}
+
+/* -------------------------------------------------------------- 3. BACKDROP */
+/* Glass needs something behind it to refract, so the page sits on a slow field
+   of light rather than a flat fill. It is decorative and inert: fixed, behind
+   everything, and untouchable by the pointer. */
+@layer backdrop {
+  .bg{ position:fixed; inset:0; z-index:-1; pointer-events:none; overflow:hidden;
+       background:
+         radial-gradient(120% 90% at 50% -20%, var(--ground) 0%, var(--ground-2) 100%); }
+  .orb{
+    position:absolute; border-radius:50%; filter: blur(70px);
+    opacity:.5; will-change: transform;
+    /* The orbs drift on their own, and lean a little toward the pointer —
+       --px / --py are written by app.js, and default to centre. */
+    translate: calc(var(--px, 0) * var(--lean, 26px)) calc(var(--py, 0) * var(--lean, 26px));
+    transition: translate .9s var(--ease);
+  }
+  .o1{ width:46vw; height:46vw; left:-8vw; top:-12vw; --lean:34px;
+       background: radial-gradient(circle, color-mix(in oklab, var(--accent) 55%, transparent), transparent 68%) }
+  .o2{ width:38vw; height:38vw; right:-6vw; top:18vh; --lean:-22px;
+       background: radial-gradient(circle, color-mix(in oklab, var(--accent-2) 45%, transparent), transparent 68%) }
+  .o3{ width:34vw; height:34vw; left:34vw; bottom:-14vw; --lean:18px;
+       background: radial-gradient(circle, color-mix(in oklab, var(--good) 32%, transparent), transparent 70%) }
+  .orb{ opacity:.55 }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .orb{ opacity:.30 } }
+  :root[data-theme="dark"] .orb{ opacity:.30 }
+}
+
+/* ----------------------------------------------------------------- 4. SHELL */
+@layer shell {
+  .shell{ display:grid; grid-template-columns: var(--rail) minmax(0,1fr); min-height:100dvh }
+
+  nav{
+    padding:22px 14px 18px; display:flex; flex-direction:column; gap:3px;
+    position:sticky; top:0; align-self:start; height:100dvh; overflow:auto;
+    background: var(--glass); border-right:1px solid var(--glass-line);
+    backdrop-filter: blur(var(--blur)) saturate(1.6);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.6);
+
+    & .brand{ padding:0 10px 18px; border-bottom:1px solid var(--line-soft); margin-bottom:14px }
+    & .navsec{ font:600 10px/1.4 var(--ui); letter-spacing:.17em; text-transform:uppercase;
+               color: var(--ink-3); padding:16px 12px 6px }
+    & .fill{ flex:1; min-height:14px }
+
+    /* A nav item slides a lit edge in from the left as the pointer arrives. */
+    & button{
+      all:unset; cursor:pointer; position:relative; overflow:hidden;
+      padding:10px 13px; border-radius:11px; font:600 13.5px var(--ui);
+      color: var(--ink-2); white-space:nowrap; display:flex; align-items:center; gap:8px;
+      transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+      &::before{
+        content:""; position:absolute; left:0; top:18%; bottom:18%; width:3px; border-radius:3px;
+        background: var(--accent); scale: 1 0; transform-origin:center;
+        transition: scale .26s var(--ease);
+      }
+      &:hover{ background: var(--panel-2); color: var(--ink); &::before{ scale: 1 1 } }
+      &[aria-current="true"]{
+        background: var(--accent-soft); color: var(--accent);
+        &::before{ scale: 1 1 }
+      }
+    }
+    & .cnt{
+      margin-left:auto; min-width:20px; padding:0 6px; border-radius:9px;
+      background: color-mix(in oklab, var(--accent) 18%, transparent);
+      color: var(--accent); font:500 11px/18px var(--mono); text-align:center;
+      &:empty{ display:none }
+    }
+    & button[aria-current="true"] .cnt{ background: var(--accent); color: var(--panel) }
+  }
+
+  main{ min-width:0; padding-inline: clamp(16px, 2.2vw, 40px); padding-block: 0 90px }
+
+  .secthead{
+    position:sticky; top:0; z-index:6; padding-block:20px 14px; margin-bottom:20px;
+    border-bottom:1px solid var(--glass-line);
+    background: color-mix(in oklab, var(--ground) 72%, transparent);
+    backdrop-filter: blur(14px) saturate(1.5);
+    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+    & .eyebrow{ margin-bottom:2px }
+  }
+
+  @media (max-width: 880px){
+    .shell{ grid-template-columns: minmax(0,1fr) }
+    nav{ position:sticky; top:0; z-index:10; height:auto; flex-direction:row; align-items:center;
+         overflow-x:auto; border-right:0; border-bottom:1px solid var(--glass-line); padding:10px 12px;
+         & .brand, & .navsec, & .fill{ display:none }
+         & button::before{ inset:auto 18% 0 18%; width:auto; height:3px; scale:0 1 }
+    }
+    .secthead{ position:static; background:none; backdrop-filter:none }
+    main{ padding-block: 0 70px }
+  }
+}
+
+/* ------------------------------------------------------------ 5. COMPONENTS */
+@layer components {
+  /* Every raised surface is the same object: glass, hairline, soft shadow.
+     What changes between them is size and what they hold — not the recipe. */
+  .panel, .card, .tile{
+    background: var(--glass);
+    border:1px solid var(--glass-line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(var(--blur)) saturate(1.6);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.6);
+  }
+  .panel{ padding:20px 22px;
+    & > .sub{ color: var(--ink-2); font-size:13.5px; margin:5px 0 15px; max-width:72ch }
+    & > h2 + .sub{ margin-top:4px }
+  }
+
+  /* The pointer lights the surface it is over. --mx/--my come from app.js. */
+  .glow{ position:relative; isolation:isolate;
+    &::after{
+      content:""; position:absolute; inset:0; border-radius:inherit; z-index:-1;
+      background: radial-gradient(240px circle at var(--mx,50%) var(--my,50%),
+                  color-mix(in oklab, var(--accent) 16%, transparent), transparent 62%);
+      opacity:0; transition: opacity .3s var(--ease);
+    }
+    &:hover::after{ opacity:1 }
+  }
+
+  .grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:13px }
+  .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap }
+  .lbl{ display:block; font:600 11.5px var(--ui); letter-spacing:.02em;
+        color: var(--ink-2); margin-bottom:6px }
+
+  input, select, textarea{
+    width:100%; padding:10px 12px; border-radius: var(--radius-sm);
+    border:1px solid var(--line); background: var(--glass-2); color: var(--ink);
+    font:14.5px var(--body);
+    transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease),
+                box-shadow var(--fast) var(--ease);
+    &:hover{ border-color: color-mix(in oklab, var(--accent) 38%, var(--line)) }
+    &:focus{ background: var(--panel);
+             box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent) }
+  }
+  input.num, select.num, input[type="number"], input[type="date"]{ font-family: var(--mono) }
+  textarea.copy{ min-height:200px; font:13.5px/1.6 var(--body); resize:vertical }
+  @supports (field-sizing: content){ textarea.copy{ field-sizing: content; max-height:60vh } }
+
+  /* A company is picked, not typed — the whole chip is the target, and it
+     answers the press before the data comes back. */
+  .chips{ display:flex; flex-wrap:wrap; gap:9px }
+  .chip{
+    cursor:pointer; position:relative; overflow:hidden; user-select:none;
+    border:1px solid var(--line); border-radius:12px; padding:9px 14px;
+    background: var(--glass-2); font-size:13.5px;
+    display:flex; align-items:center; gap:8px;
+    transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease),
+                color var(--fast) var(--ease), transform var(--fast) var(--ease),
+                box-shadow var(--fast) var(--ease);
+    & input{ width:auto; margin:0 }
+    & small{ color: var(--ink-3); font-size:11.5px }
+    &:hover{ transform: translateY(-2px); border-color: color-mix(in oklab, var(--accent) 45%, var(--line));
+             box-shadow: var(--shadow) }
+    &:active{ transform: translateY(0) scale(.98) }
+    &[data-on="1"], &:has(input:checked){
+      border-color: transparent; background: var(--accent-soft);
+      color: var(--accent); font-weight:600; box-shadow: var(--glow);
+      & small{ color: var(--accent) }
+    }
+  }
+
+  .btn{
+    all:unset; cursor:pointer; position:relative; overflow:hidden;
+    padding:10px 18px; border-radius:12px; font:600 13.5px var(--ui);
+    text-align:center; white-space:nowrap;
+    transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease),
+                background var(--fast) var(--ease), color var(--fast) var(--ease);
+    &:hover{ transform: translateY(-2px) }
+    &:active{ transform: translateY(0) scale(.985) }
+    /* A press leaves a ripple from where it landed — app.js writes --rx/--ry. */
+    &::before{
+      content:""; position:absolute; left:var(--rx,50%); top:var(--ry,50%);
+      width:6px; height:6px; margin:-3px 0 0 -3px; border-radius:50%;
+      background: currentColor; opacity:0; pointer-events:none;
+    }
+    &.rip::before{ animation: ripple .55s var(--ease) }
+
+    &.primary{ background: linear-gradient(135deg, var(--accent), var(--accent-2));
+               color:#fff; box-shadow: var(--shadow);
+               &:hover{ box-shadow: var(--glow) } }
+    &.ghost{ border:1px solid var(--line); color: var(--ink-2); background: var(--glass-2);
+             &:hover{ color: var(--ink); border-color: color-mix(in oklab, var(--accent) 40%, var(--line)) } }
+    &.ok{ background: var(--good); color:#fff }
+    &.no{ border:1px solid color-mix(in oklab, var(--crit) 50%, var(--line));
+          color: var(--crit); background: var(--glass-2);
+          &:hover{ background: var(--crit-soft) } }
+    &[disabled]{ opacity:.36; cursor:not-allowed; filter:grayscale(.55); transform:none }
+    &.busy{
+      background: linear-gradient(135deg, var(--accent), var(--accent-2)); color:#fff;
+      opacity:1 !important; filter:none !important; cursor:progress; transform:none;
+      box-shadow: inset 0 2px 7px oklch(0% 0 0 / .3);
+      &::after{ content:""; position:absolute; inset:auto 0 0 0; height:3px;
+                background: oklch(100% 0 0 / .7); transform-origin:left;
+                animation: sweep 1.4s ease-in-out infinite }
+    }
+  }
+  @keyframes ripple{ from{ opacity:.35; scale:1 } to{ opacity:0; scale:34 } }
+  @keyframes sweep { 0%{transform:scaleX(0)} 50%{transform:scaleX(1)}
+                     100%{transform:scaleX(0); transform-origin:right} }
+
+  /* Not everything is a card: a note is a stripe of state against the page. */
+  .note, .working{
+    border-left:3px solid var(--accent);
+    background: var(--accent-soft);
+    padding:13px 16px; border-radius:0 12px 12px 0; font-size:13.5px; margin-top:14px;
+    & .num{ font-weight:500 }
+  }
+  .note.bad { border-left-color: var(--crit); background: var(--crit-soft) }
+  .note.good{ border-left-color: var(--good); background: var(--good-soft) }
+  .working{ position:relative; overflow:hidden;
+    &::after{ content:""; position:absolute; inset:0 auto 0 0; width:34%;
+              background: linear-gradient(90deg, transparent,
+                          color-mix(in oklab, var(--accent) 14%, transparent), transparent);
+              animation: shimmer 2.1s linear infinite } }
+  @keyframes shimmer{ from{ transform: translateX(-120%) } to{ transform: translateX(420%) } }
+
+  .tot{
+    display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+    padding-top:16px; margin-top:18px; border-top:1px solid var(--line-soft);
+    & .big{ font:500 clamp(28px, 3.2vw, 36px) var(--mono); letter-spacing:-.035em;
+            font-variant-numeric: tabular-nums;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            -webkit-background-clip:text; background-clip:text; color:transparent }
+    & .meta{ font-size:13px; color: var(--ink-2) }
+  }
+  .plan{
+    border:1px solid var(--line-soft); border-radius:12px; padding:11px 15px; margin-top:12px;
+    background: var(--glass-2); font-size:13px; max-height:200px; overflow:auto;
+    & div{ padding:3px 0; color: var(--ink-2) }
+    & b{ color: var(--ink); font-weight:600 }
+  }
+
+  .card{
+    padding:17px 19px; display:flex; flex-direction:column; gap:12px;
+    transition: transform .22s var(--ease), box-shadow .22s var(--ease),
+                border-color .22s var(--ease);
+    &:hover{ transform: translateY(-3px); box-shadow: var(--shadow-lift);
+             border-color: color-mix(in oklab, var(--accent) 28%, var(--glass-line)) }
+    & header{ display:flex; justify-content:space-between; gap:12px;
+              flex-wrap:wrap; align-items:flex-start; margin:0 }
+    & .who{ font:600 14px var(--ui) }
+    & .idline{ font:400 11.5px var(--mono); color: var(--ink-3); word-break:break-all }
+    & pre{ white-space:pre-wrap; font:13.5px/1.6 var(--body); margin:0;
+           background: var(--glass-2); border:1px solid var(--line-soft);
+           border-radius:12px; padding:13px; max-height:240px; overflow:auto }
+    & .media{ display:flex; gap:12px; flex-wrap:wrap }
+    & .media img, & .media video{ max-width:240px; max-height:240px; border-radius:12px;
+           border:1px solid var(--line); transition: transform .3s var(--ease) }
+    & .media img:hover{ transform: scale(1.03) }
+    & .row{ margin:0; gap:8px }
+    & .btn{ padding:8px 14px; font-size:13px }
+  }
+
+  .tag{
+    display:inline-block; font:600 10px/1.9 var(--ui); letter-spacing:.09em;
+    text-transform:uppercase; padding:1px 9px; border-radius:999px;
+    border:1px solid currentColor;
+    background: color-mix(in oklab, currentColor 12%, transparent);
+  }
+  .t-wait{ color: var(--accent) } .t-ok{ color: var(--good) }
+  .t-bad { color: var(--crit) }   .t-mute{ color: var(--ink-3) }
+
+  .empty{ color: var(--ink-3); text-align:center; padding:44px 0; font-size:14px }
+
+  table{ width:100%; border-collapse:collapse; font-variant-numeric: tabular-nums }
+  tbody tr{ transition: background var(--fast) var(--ease);
+            &:hover{ background: color-mix(in oklab, var(--accent) 6%, transparent) } }
+
+  #toast{
+    position:fixed; left:50%; bottom:28px; translate:-50% 0; z-index:40;
+    background: color-mix(in oklab, var(--ink) 92%, transparent); color: var(--ground);
+    padding:13px 21px; border-radius:14px; font:600 13.5px/1.5 var(--ui);
+    box-shadow: var(--shadow-lift); cursor:pointer;
+    max-width:min(680px, calc(100vw - 32px));
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    animation: toast-in .3s var(--ease);
+  }
+  @keyframes toast-in{ from{ opacity:0; translate:-50% 14px } }
+}
+
+/* ----------------------------------------------------------------- 6. VIEWS */
+@layer views {
+  /* Bento: the order screen is read across, not down. Four counts on top, the
+     choices in a wide track, the price and the Confirm button in a rail that
+     stays with you while you build the order. */
+  #v-order{
+    display:grid; gap:18px; align-items:start;
+    grid-template-columns: minmax(0,1fr);
+    & > .secthead, & > .pipe, & > #needCfg{ grid-column: 1 / -1 }
+  }
+  .ordercol{ display:grid; gap:18px; align-items:start; min-width:0 }
+  @media (min-width: 1120px){
+    #v-order{ grid-template-columns: minmax(0,1.55fr) minmax(336px,.75fr) }
+    .ordersum{ position:sticky; top:108px }
+  }
+
+  .pipe{ display:grid; gap:14px;
+         grid-template-columns: repeat(auto-fit, minmax(min(100%,210px),1fr)) }
+  .tile{
+    all:unset; cursor:pointer; display:grid; gap:3px; align-content:start;
+    padding:16px 18px; box-sizing:border-box;
+    background: var(--glass); border:1px solid var(--glass-line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    transition: transform .22s var(--ease), box-shadow .22s var(--ease);
+    &:hover{ transform: translateY(-3px); box-shadow: var(--shadow-lift) }
+    &:active{ transform: translateY(-1px) scale(.995) }
+    & .k{ font:600 10.5px var(--ui); letter-spacing:.14em; text-transform:uppercase; color: var(--ink-3) }
+    & .v{ font:500 clamp(28px,2.6vw,34px)/1.12 var(--mono); letter-spacing:-.035em; color: var(--ink) }
+    & .n{ font-size:12px; color: var(--ink-2) }
+    /* A count that is not zero carries a lit top edge: state you read at a glance. */
+    &::before{
+      content:""; position:absolute; inset:0 0 auto 0; height:3px;
+      border-radius: var(--radius) var(--radius) 0 0;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      opacity:1; transition: opacity .3s var(--ease);
+    }
+    position:relative; overflow:hidden;
+    &[data-empty="1"]{ &::before{ opacity:0 } & .v{ color: var(--ink-3) } }
+  }
+
+  /* Finished posts are compared side by side, not scrolled past one at a time. */
+  #reviewList, #publishList{
+    display:grid; gap:16px; align-items:start; margin-top:18px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 430px), 1fr));
+    & > .panel{ grid-column: 1 / -1 }
+  }
+  #v-review > .panel, #v-publish > .panel, #v-done > .panel,
+  #v-queue > .panel, #v-setup > .panel{ margin-bottom:18px }
+  section > .panel + .panel{ margin-top:0 }
+}
+
+/* ---------------------------------------------------------------- 7. MOTION */
+@layer motion {
+  /* Entrance. Elements start slightly low and clear, and settle as they arrive.
+     Native scroll-driven animation where the browser has it; an
+     IntersectionObserver in app.js covers the rest. Either way nothing is left
+     stranded invisible: .in is added immediately for anything already on screen,
+     and a timer in app.js reveals everything regardless after a moment. */
+  @media (prefers-reduced-motion: no-preference){
+    .reveal{ opacity:0; translate:0 14px; filter: blur(3px);
+             transition: opacity var(--slow) var(--ease),
+                         translate var(--slow) var(--ease),
+                         filter var(--slow) var(--ease) }
+    .reveal.in{ opacity:1; translate:0 0; filter:none }
+
+    @supports (animation-timeline: view()){
+      .reveal{ opacity:1; translate:0 0; filter:none;
+               animation: rise linear both; animation-timeline: view();
+               animation-range: entry 0% entry 46% }
+      .reveal.in{ animation:none }
+    }
+    @keyframes rise{ from{ opacity:0; translate:0 18px; filter:blur(3px) } }
+
+    /* Switching sections is a move between views, so it gets a move. */
+    ::view-transition-old(root){ animation: fade-out .14s ease both }
+    ::view-transition-new(root){ animation: fade-in .26s var(--ease) both }
+    @keyframes fade-out{ to{ opacity:0 } }
+    @keyframes fade-in { from{ opacity:0; translate:0 9px } }
+  }
+
+  /* Nothing moves for a viewer who asked for stillness — including the
+     backdrop, which is the one thing that would otherwise animate forever. */
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{
+      animation-duration:.01ms !important; animation-iteration-count:1 !important;
+      transition-duration:.01ms !important; scroll-behavior:auto !important;
+    }
+    .orb{ translate:none !important }
+    .reveal{ opacity:1 !important; translate:none !important; filter:none !important }
+  }
+}
