@@ -709,10 +709,29 @@ function unstarted(r){
 /* What the engine will do to this row on its next run. This mirrors the order of
    the branches in 'Validate and Classify Queue Rows' - one run advances a row by
    exactly one stage, which is why a video post needs three runs, not one. */
+/* After a failed generation the engine sets next_retry_at and will not touch the
+   row again until that time passes. The console used to ignore that field, so it
+   counted a cooling-off row as work the engine was about to do — then reported
+   "the engine did not pick this up" when the engine correctly left it alone.
+   A row in backoff is waiting, not pending. */
+function coolingOff(r){
+  var t = Date.parse(r.next_retry_at || '');
+  return t && t > Date.now() ? t : 0;
+}
+function retryLabel(r){
+  var t = coolingOff(r);
+  if (!t) return '';
+  var mins = Math.max(1, Math.round((t - Date.now()) / 60000));
+  return 'Retrying in ' + mins + ' min';
+}
+
 function nextStep(r){
   var st = (r.status || '').toLowerCase();
   var mt = r.media_type || 'Image';
   var needImg = /image/i.test(mt), needVid = /video/i.test(mt);
+  if (coolingOff(r) && (r.image_status === 'Failed' || r.video_status === 'Failed')){
+    return { key:'retry', label: retryLabel(r) };
+  }
   if (st === 'needs draft' || st === 'draft requested') return { key:'draft',  label:'Write the copy' };
   if (st === 'awaiting approval'){
     if (needImg && !r.image_url) return { key:'image', label:'Generate the image' };
@@ -784,7 +803,8 @@ function loadQueue(){
           var cls = st === 'needs review' ? 't-bad' : 't-wait';
           var n = nextStep(r);
           var ncls = ['draft','image','video','audit','publish'].indexOf(n.key) >= 0 ? 't-wait'
-                   : n.key === 'human' ? 't-bad' : 't-mute';
+                   : n.key === 'human' ? 't-bad'
+                   : n.key === 'retry' ? 't-bad' : 't-mute';
           var price = stepCost(r, n.key);
           var company = (BRANDS.filter(function(b){ return b.brand_id === r.brand_id; })[0] || {}).company_name || r.brand_id;
           return '<tr title="' + esc(r.last_error || '') + '">' +
@@ -940,8 +960,35 @@ function poll(){
       var test = /\/webhook-test\//.test(CFG.hook || '');
       var unreadable = WATCH.trigger === 'unreadable';
       stopWatch();
+
+      /* Nothing changed can mean two completely different things, and saying the
+         wrong one sends you to n8n to fix a workflow that is working. Check the
+         queue first: if no row was actually due, the engine ran and correctly
+         did nothing. */
+      var due = pendingWork(rows);
+      if (!due.length){
+        var cooling = rows.filter(coolingOff)
+                          .sort(function(a,b){ return coolingOff(a) - coolingOff(b); });
+        var human = rows.filter(function(r){ return nextStep(r).key === 'human'; });
+        $('#runSummary').innerHTML = '<div class="note good">' +
+          '<strong>The engine ran and found nothing due.</strong> That is not a fault — no row was ready for it.' +
+          (cooling.length
+            ? '<br><span class="num">' + cooling.length + '</span> row' + (cooling.length === 1 ? ' is' : 's are') +
+              ' cooling off after a failed attempt. The engine will not retry before ' +
+              new Date(coolingOff(cooling[0])).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + '.'
+            : '') +
+          (human.length
+            ? '<br><span class="num">' + human.length + '</span> row' + (human.length === 1 ? '' : 's') +
+              ' need a person, not the engine — see the Queue for the reason on each.'
+            : '') +
+          '</div>';
+        return;
+      }
+
       $('#runSummary').innerHTML = '<div class="note bad">' +
-        '<strong>Nothing has changed in the database for two minutes — the engine did not pick this up.</strong>' +
+        '<strong>Nothing has changed in the database for two minutes, and ' +
+        '<span class="num">' + due.length + '</span> row' + (due.length === 1 ? ' was' : 's were') +
+        ' due — so the engine did not pick this up.</strong>' +
         '<br>Three things cause this, in order of how often:' +
         '<br>1. The workflow is not <strong>Active</strong> in n8n. A production webhook only answers while it is.' +
         '<br>2. The URL under Connection is the <strong>test</strong> one — <code>/webhook-test/</code> fires only while you are ' +
