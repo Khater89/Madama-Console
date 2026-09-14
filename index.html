@@ -6,8 +6,8 @@
 <title>Madama Console</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="style.css">
-<script src="app.js" defer></script>
+<link rel="stylesheet" href="style.css?v=5">
+<script src="app.js?v=5" defer></script>
 </head>
 <body>
 
@@ -129,7 +129,7 @@
     <div class="secthead"><div class="eyebrow">Marketing</div><h2>Review &amp; edit</h2></div>
     <div class="panel">
       <h2>Awaiting your approval</h2>
-      <p class="sub">Everything the engine has finished producing. Approving a row releases it to publishing; rejecting sends it back for review.</p>
+      <p class="sub">Everything the engine has finished producing. Each post is sent to Telegram the moment it lands here, and again every time you <strong>Save edits</strong>. <strong>Approve</strong> moves it to Pending publishing — nothing new goes to Telegram at that point.</p>
       <div class="row"><button class="btn ghost" id="reloadReview">Refresh</button><button class="btn no" id="clearReview">Clear</button></div>
     </div>
     <div id="reviewList"></div>
@@ -139,7 +139,7 @@
   <section id="v-publish" hidden>
     <div class="secthead"><div class="eyebrow">Marketing</div><h2>Pending publishing</h2></div>
     <div class="panel">
-      <p class="sub">Approved and already sent to Telegram. Waiting to go out. Each one publishes to that company's own account on that platform — the account ids come from the company record, not from here.</p>
+      <p class="sub">Approved and waiting to go out. Its latest version is already on Telegram. Each one publishes to that company's own account on that platform — the account ids come from the company record, not from here.</p>
       <div class="row"><button class="btn ghost" id="reloadPublish">Refresh</button><button class="btn no" id="clearPublish">Clear</button></div>
     </div>
     <div id="publishList"></div>
@@ -161,7 +161,7 @@
     <div class="panel">
       <h2>In production</h2>
       <p class="sub">Posts the engine is still working on. Each one leaves this list the moment it is finished and moves to Review &amp; edit.</p>
-      <div class="row"><button class="btn primary" id="runEngine">Run engine now</button><button class="btn ghost" id="reloadQueue">Refresh</button><button class="btn no" id="clearQueue">Clear</button><button class="btn no" id="dropDrafts" hidden>Delete unstarted drafts</button></div><div id="runSummary"></div>
+      <div class="row"><button class="btn primary" id="runEngine">Run until done</button><button class="btn ghost" id="runStage" title="Advance every row by exactly one stage, then stop">Run one stage</button><button class="btn ghost" id="reloadQueue">Refresh</button><button class="btn no" id="clearQueue">Clear</button><button class="btn no" id="dropDrafts" hidden>Delete unstarted drafts</button></div><div id="runSummary"></div>
     </div>
     <div class="panel" style="overflow-x:auto"><div id="queueTable"><div class="empty">Loading…</div></div></div>
   </section>

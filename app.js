@@ -451,6 +451,41 @@ function copyFor(r){
   return t === 'facebook' ? r.generated_facebook : t === 'instagram' ? r.generated_instagram : r.generated_linkedin;
 }
 var REVIEW = [];
+/* ---------- Telegram as a review feed ----------
+   Telegram no longer waits for approval. A post is pushed the moment it lands in
+   Review & edit, and again each time you Save edits, so the channel always shows
+   the current version. Approval is now a silent move to Pending publishing.
+
+   Two guards stop the channel from being spammed:
+     - TG_SENT (here) skips re-calling the function for a version this browser
+       already pushed in this session;
+     - the Edge Function itself stamps each row with a fingerprint of what it sent
+       and refuses to send the same thing twice - so a page reload, a refresh, or a
+       second device cannot repost what is already there. That server-side guard is
+       the real one; TG_SENT just saves needless calls. */
+function tgSig(r){
+  return [r.target_platform, copyFor(r) || '', r.image_url || '', r.video_url || ''].join('\u0001');
+}
+var TG_SENT = {};
+/* Fire-and-forget for rows that just entered review. Quiet on failure - this runs
+   on every data refresh, so a toast per tick would be noise; the row stays unmarked
+   and is retried on the next refresh. */
+function notifyReview(rows){
+  if (!CFG.url || !CFG.key) return;
+  rows.forEach(function(r){
+    var sig = tgSig(r);
+    if (TG_SENT[r.id] === sig) return;
+    TG_SENT[r.id] = sig;
+    callFn('telegram', { id: r.id }).catch(function(){ delete TG_SENT[r.id]; });
+  });
+}
+/* Explicit push after Save edits: force it through even if the fingerprint matches,
+   and report success or failure, because the person is waiting on this one. */
+function pushTelegram(id, row){
+  if (row) TG_SENT[id] = tgSig(row);
+  return callFn('telegram', { id: id, force: true });
+}
+
 function loadReview(){
   var box = $('#reviewList'); box.innerHTML = '<div class="empty">Loading…</div>';
   loadAll().then(function(){
@@ -471,17 +506,17 @@ function loadReview(){
           '</div>' +
           '<div data-diff></div>' +
           '<div class="row">' +
-          '<button class="btn ghost" data-act="save">Save edits</button>' +
-          '<button class="btn ok" data-act="approve">Approve &amp; send to Telegram</button>' +
+          '<button class="btn ghost" data-act="save">Save edits &amp; send</button>' +
+          '<button class="btn ok" data-act="approve">Approve</button>' +
           '<button class="btn no" data-act="delete">Delete</button>' +
           '</div></div>';
       }).join('');
       $$('#reviewList [data-act]').forEach(function(b){
         b.addEventListener('click', function(){
           var card = b.closest('.card'), id = card.dataset.id;
-          if (b.dataset.act === 'save')    return saveCopy(card, id);
+          if (b.dataset.act === 'save')    return saveCopy(card, id, { notify:true });
           if (b.dataset.act === 'rewrite') return rewrite(card, id, b);
-          if (b.dataset.act === 'approve') return saveCopy(card, id, function(){ decide(id, 'approve'); });
+          if (b.dataset.act === 'approve') return saveCopy(card, id, { notify:false }, function(){ decide(id, 'approve'); });
           if (b.dataset.act === 'delete')  return dropRows([id], loadReview);
           decide(id, b.dataset.act);
         });
@@ -500,12 +535,10 @@ function decide(id, act){
         toast('The database refused the change. Run madama_system2_frontend_grants.sql once.');
         return;
       }
-      /* Telegram fires on APPROVAL, not on production - you see it only after you
-         have signed it off. The bot token lives in an Edge Function, never here. */
-      return callFn('telegram', { id: id })
-      .then(function(){ toast('Approved and sent to Telegram'); })
-      .catch(function(e){ toast('Approved, but Telegram failed: ' + e.message); })
-      .then(function(){ loadReview(); });
+      /* Telegram already has this post - it was pushed when it entered review and
+         on every Save edits. Approval is now only a move to Pending publishing. */
+      toast('Approved — moved to Pending publishing');
+      loadReview();
     })
     .catch(function(e){ toast('Failed: ' + e.message); });
 }
@@ -547,6 +580,7 @@ function loadAll(){
         el.closest('.tile').dataset.empty = n[k] ? '0' : '1';
       });
       refreshClearButtons();
+      notifyReview(rows.filter(function(r){ return stageOf(r) === 'review'; }));
       return rows;
     });
 }
@@ -557,10 +591,26 @@ function fieldFor(platform){
   var t = (platform || '').toLowerCase();
   return t === 'facebook' ? 'generated_facebook' : t === 'instagram' ? 'generated_instagram' : 'generated_linkedin';
 }
-function saveCopy(card, id, then){
+function saveCopy(card, id, opts, then){
+  opts = opts || {};
   var row = (REVIEW.filter(function(r){ return r.id === id; })[0]) || {};
   var text = card.querySelector('[data-copy]').value;
-  if (text === (copyFor(row) || '')) { if (then) then(); else toast('Nothing changed'); return; }
+  var changed = text !== (copyFor(row) || '');
+
+  /* After the copy is safely stored (or found unchanged), Save edits pushes the
+     current version to Telegram; Approve does not. */
+  function done(){
+    if (opts.notify){
+      pushTelegram(id, row)
+        .then(function(){ toast(changed ? 'Saved and sent to Telegram' : 'Sent to Telegram'); })
+        .catch(function(e){ toast('Saved, but Telegram failed: ' + e.message); });
+    } else if (!then){
+      toast(changed ? 'Saved' : 'Nothing changed');
+    }
+    if (then) then();
+  }
+
+  if (!changed){ done(); return; }
   var patch = {};
   patch[fieldFor(row.target_platform)] = text;
   patch.updated_at = new Date().toISOString();
@@ -568,8 +618,7 @@ function saveCopy(card, id, then){
     .then(function(res){
       if (!res || !res.length){ toast('The database refused the edit. Run the grants SQL once.'); return; }
       row[fieldFor(row.target_platform)] = text;
-      toast('Saved');
-      if (then) then();
+      done();
     })
     .catch(function(e){ toast('Save failed: ' + e.message); });
 }
@@ -678,8 +727,10 @@ function loadDone(){
           var company = (BRANDS.filter(function(b){ return b.brand_id === r.brand_id; })[0] || {}).company_name || r.brand_id;
           var when = String(r.published_at || r.updated_at || '').slice(0,16).replace('T',' ');
           return '<tr>' +
-            [company, r.content_pillar, PLATNAME[r.target_platform] || r.target_platform, r.media_type].map(function(v){
-              return '<td style="' + TD + '">' + esc(v) + '</td>';
+            '<td style="' + TD + '">' + esc(company) +
+              (err ? '<div class="rowerr">' + esc(err) + '</div>' : '') + '</td>' +
+            [r.content_pillar, PLATNAME[r.target_platform] || r.target_platform, r.media_type].map(function(v){
+              return '<td style="' + TD + ';vertical-align:top">' + esc(v) + '</td>';
             }).join('') +
             '<td style="' + TD + '"><span class="tag ' + (cancelled ? 't-mute' : 't-ok') + '">' + esc(r.status) + '</span></td>' +
             '<td style="' + TD + '"><span class="idline">' + esc(when) + '</span></td>' +
@@ -776,12 +827,16 @@ function renderSummary(rows){
   if (!total){
     el.innerHTML = '<div class="note good">Nothing for the engine to do. Every row is either finished or waiting on a person.</div>';
     $('#runEngine').disabled = true;
+    $('#runStage').disabled = true;
     return;
   }
   el.innerHTML = '<div class="note"><strong>Next run will produce:</strong> ' + parts.join(', ') +
     ' — about <span class="num">$' + cost.toFixed(2) + '</span>.<br>' +
-    'One run advances every row by a single stage, so a post with a video needs three runs in all: copy, then image, then video.</div>';
+    'One pass advances every row by a single stage — a post with a video needs three: copy, then image, then video. ' +
+    '<strong>Run until done</strong> makes those passes for you and stops when the queue is clear; ' +
+    '<strong>Run one stage</strong> does exactly one and hands the decision back to you.</div>';
   $('#runEngine').disabled = false;
+  $('#runStage').disabled = false;
 }
 
 function loadQueue(){
@@ -789,45 +844,63 @@ function loadQueue(){
   loadAll().then(function(){
       var rows = QUEUE = stage('queue');
       renderSummary(rows);
-      var drafts = rows.filter(unstarted).length;
-      $('#dropDrafts').hidden = !drafts;
-      $('#dropDrafts').textContent = 'Delete all ' + drafts + ' unstarted draft' + (drafts === 1 ? '' : 's');
-      if (!rows.length) { box.innerHTML = '<div class="empty">Nothing in production. Finished posts are under Review &amp; edit.</div>'; return; }
-
-      box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13.5px">' +
-        '<thead><tr>' + ['Company','Service','Platform','Media','Status','Next step',''].map(function(h){
-          return '<th style="text-align:left;font:600 11px var(--ui);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);padding:0 12px 8px 0;border-bottom:1px solid var(--line)">' + h + '</th>';
-        }).join('') + '</tr></thead><tbody>' +
-        rows.map(function(r){
-          var st = (r.status || '').toLowerCase();
-          var cls = st === 'needs review' ? 't-bad' : 't-wait';
-          var n = nextStep(r);
-          var ncls = ['draft','image','video','audit','publish'].indexOf(n.key) >= 0 ? 't-wait'
-                   : n.key === 'human' ? 't-bad'
-                   : n.key === 'retry' ? 't-bad' : 't-mute';
-          var price = stepCost(r, n.key);
-          var company = (BRANDS.filter(function(b){ return b.brand_id === r.brand_id; })[0] || {}).company_name || r.brand_id;
-          return '<tr title="' + esc(r.last_error || '') + '">' +
-            [company, r.content_pillar, PLATNAME[r.target_platform] || r.target_platform, r.media_type].map(function(v){
-              return '<td style="' + TD + '">' + esc(v) + '</td>';
-            }).join('') +
-            '<td style="' + TD + '"><span class="tag ' + cls + '">' + esc(r.status) + '</span></td>' +
-            '<td style="' + TD + '"><span class="tag ' + ncls + '">' + esc(n.label) + '</span>' +
-              (price ? ' <span class="idline">$' + price.toFixed(2) + '</span>' : '') + '</td>' +
-            '<td style="' + TD + ';text-align:right">' +
-              (deletable(r)
-                ? '<button class="btn no" style="padding:4px 12px;font-size:12.5px" data-del="' + esc(r.id) + '">Delete</button>'
-                : '<span class="idline" title="Being produced right now — deleting it mid-generation wastes what it cost">—</span>') +
-            '</td></tr>';
-        }).join('') + '</tbody></table>';
-
-      $$('#queueTable [data-del]').forEach(function(b){
-        b.addEventListener('click', function(){ dropRows([b.dataset.del]); });
-      });
+      renderQueueTable(rows);
     })
     .catch(function(e){ box.innerHTML = '<div class="note bad">' + esc(e.message) + '</div>'; });
 }
 
+/* Building the table is its own function so the RUN WATCHER can call it too. The
+   panel and the table used to be written by different code at different moments -
+   the panel by poll() at the end of a run, the table by the last loadQueue() -
+   so after a run they could disagree: the panel saying "paused, nothing due"
+   above a table still showing "generate the image" from before the run failed
+   those rows. Now poll() re-renders the table from the same read it judged, so
+   what the panel says and what the table shows are always one snapshot. */
+function renderQueueTable(rows){
+  var box = $('#queueTable'); if (!box) return;
+  var drafts = rows.filter(unstarted).length;
+  if ($('#dropDrafts')){
+    $('#dropDrafts').hidden = !drafts;
+    $('#dropDrafts').textContent = 'Delete all ' + drafts + ' unstarted draft' + (drafts === 1 ? '' : 's');
+  }
+  if (!rows.length){ box.innerHTML = '<div class="empty">Nothing in production. Finished posts are under Review &amp; edit.</div>'; return; }
+
+  box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13.5px">' +
+    '<thead><tr>' + ['Company','Service','Platform','Media','Status','Next step',''].map(function(h){
+      return '<th style="text-align:left;font:600 11px var(--ui);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);padding:0 12px 8px 0;border-bottom:1px solid var(--line)">' + h + '</th>';
+    }).join('') + '</tr></thead><tbody>' +
+    rows.map(function(r){
+      var st = (r.status || '').toLowerCase();
+      var cls = st === 'needs review' ? 't-bad' : 't-wait';
+      var n = nextStep(r);
+      var ncls = ['draft','image','video','audit','publish'].indexOf(n.key) >= 0 ? 't-wait'
+               : n.key === 'human' ? 't-bad'
+               : n.key === 'retry' ? 't-bad' : 't-mute';
+      var price = stepCost(r, n.key);
+      var company = (BRANDS.filter(function(b){ return b.brand_id === r.brand_id; })[0] || {}).company_name || r.brand_id;
+      /* The reason a row stopped is the most useful fact on it, and it was hidden
+         in a hover tooltip - invisible on a phone. It goes on the row, in red. */
+      var err = String(r.last_error || '').trim();
+      return '<tr>' +
+        '<td style="' + TD + ';vertical-align:top">' + esc(company) +
+          (err ? '<div class="rowerr">' + esc(err) + '</div>' : '') + '</td>' +
+        [r.content_pillar, PLATNAME[r.target_platform] || r.target_platform, r.media_type].map(function(v){
+          return '<td style="' + TD + ';vertical-align:top">' + esc(v) + '</td>';
+        }).join('') +
+        '<td style="' + TD + ';vertical-align:top"><span class="tag ' + cls + '">' + esc(r.status) + '</span></td>' +
+        '<td style="' + TD + ';vertical-align:top"><span class="tag ' + ncls + '">' + esc(n.label) + '</span>' +
+          (price ? ' <span class="idline">$' + price.toFixed(2) + '</span>' : '') + '</td>' +
+        '<td style="' + TD + ';text-align:right;vertical-align:top">' +
+          (deletable(r)
+            ? '<button class="btn no" style="padding:4px 12px;font-size:12.5px" data-del="' + esc(r.id) + '">Delete</button>'
+            : '<span class="idline" title="Being produced right now — deleting it mid-generation wastes what it cost">—</span>') +
+        '</td></tr>';
+    }).join('') + '</tbody></table>';
+
+  $$('#queueTable [data-del]').forEach(function(b){
+    b.addEventListener('click', function(){ dropRows([b.dataset.del]); });
+  });
+}
 /* A press used to vanish without a trace: no pressed state, no progress, no way to
    know whether to press again. The button now holds a busy state for as long as the
    engine is actually working, releases itself when the stage lands, and then says
@@ -835,10 +908,20 @@ function loadQueue(){
    where you can see it and close the tab to stop it - not in a server-side loop. */
 var WATCH = null;
 
+/* What counts as "the engine touched this queue".
+
+   This used to list only status, the two media states and whether a URL existed.
+   So a run that picked a row up, tried it, failed, and wrote last_error, the
+   attempt counter and next_retry_at changed NOTHING in this signature — and the
+   console reported "nothing has changed yet" while the engine was working hard
+   and failing. row_updated_at is a database trigger on every write, whoever
+   writes, so it catches all of it. */
 function workSignature(rows){
   return rows.map(function(r){
     return [r.id, r.status, r.image_status, r.video_status,
-            r.image_url ? 1 : 0, r.video_url ? 1 : 0].join('|');
+            r.image_url ? 1 : 0, r.video_url ? 1 : 0,
+            r.image_attempts, r.video_attempts, r.next_retry_at,
+            r.last_error, r.row_updated_at].join('|');
   }).sort().join('~');
 }
 /* "In production" has to mean the engine has its hands on this row RIGHT NOW -
@@ -877,35 +960,34 @@ function stopWatch(){
   var b = $('#runEngine');
   b.classList.remove('busy');
   b.disabled = false;
-  b.textContent = 'Run engine now';
+  b.textContent = RUN_LABEL;
 }
 
-function runEngine(){
-  if (WATCH) { stopWatch(); toast('Stopped watching. The engine keeps going on its own.'); return; }
-  if (!CFG.hook){
-    toast('No webhook URL set — add it under Connection, or press Execute in n8n.');
-    return;
-  }
-  if (/\/webhook-test\//.test(CFG.hook)){
-    toast('That is the TEST webhook URL. It only fires while n8n is open on “Listen for test event”. ' +
-          'For everyday use take the Production URL — the same address with /webhook/ instead of /webhook-test/.');
-  }
-  var before = workSignature(ALL);
-  var b = $('#runEngine');
-  b.classList.add('busy');
-  b.textContent = 'Working… press to stop watching';
-  $('#runSummary').innerHTML = '<div class="working">Engine started. Watching the queue — this button releases itself when the stage lands.</div>';
+/* ---------- running the engine ----------
+   Two modes, one watcher.
 
-  WATCH = { before: before, started: Date.now(), polls: 0, sawFlight: false, timer: null, trigger: 'sent' };
+   "Run one stage" fires the webhook once. "Run until done" keeps firing after
+   each stage lands, until the queue has nothing left for the engine.
 
+   The loop lives HERE, in the page, on purpose. An earlier version drove itself
+   from inside n8n and ran away: the depth counter it relied on read a field that
+   was not always there, so the cap never engaged and it kept calling itself. A
+   loop you can see, with a button that stops it and a tab you can close, cannot
+   do that. On top of that there are three hard caps below, and every one of them
+   is tested. */
+var AUTO_MAX_PASSES = 12;                 // a video post needs 3; 12 is generous
+var AUTO_MAX_MS     = 40 * 60 * 1000;     // wall clock for the whole run
+var AUTO_MAX_SPEND  = 15;                 // dollars of estimated work per run
+var RUN_LABEL = 'Run until done';
+
+function fireWebhook(){
   /* Content-Type is text/plain ON PURPOSE, and it is the whole reason this used to
      do nothing at all.
 
      application/json is not a CORS-safe content type, so the browser insists on
      sending an OPTIONS preflight first. The Webhook node has no Allowed Origins set,
      so it never answers that preflight - and the browser then throws the POST away
-     without ever sending it. The engine was never called. Meanwhile this panel sat
-     there counting minutes, waiting for a run that had not started.
+     without ever sending it. The engine was never called.
 
      text/plain makes it a simple request: no preflight, the POST goes straight to
      n8n. The engine reads nothing out of the body, so the format costs us nothing. */
@@ -914,10 +996,10 @@ function runEngine(){
     .then(function(r){
       /* fetch does NOT reject on 404. An unregistered webhook - the usual symptom of
          a workflow that is not Active - used to land here and be thrown away silently. */
-      if (r.ok) { WATCH && (WATCH.trigger = 'ok'); return; }
+      if (r.ok) { if (WATCH) WATCH.trigger = 'ok'; return; }
       return r.text().then(function(t){
         var d = null; try { d = JSON.parse(t); } catch(e){}
-        var msg = (d && (d.message || d.error)) || t || ('HTTP ' + r.status);
+        var msg  = (d && (d.message || d.error)) || t || ('HTTP ' + r.status);
         var hint = (d && d.hint) || '';
         stopWatch();
         $('#runSummary').innerHTML = '<div class="note bad"><strong>n8n refused the call — the engine never started.</strong><br>' +
@@ -933,8 +1015,80 @@ function runEngine(){
          The database is the honest witness, so keep watching and say so. */
       if (WATCH) WATCH.trigger = 'unreadable';
     });
+}
 
+function startRun(auto){
+  if (WATCH){
+    stopWatch();
+    toast(WATCH === null ? 'Stopped.' : 'Stopped. The engine finishes the stage it is on.');
+    return;
+  }
+  if (!CFG.hook){
+    toast('No webhook URL set — add it under Connection, or press Execute in n8n.');
+    return;
+  }
+  if (/\/webhook-test\//.test(CFG.hook)){
+    toast('That is the TEST webhook URL. It only fires while n8n is open on “Listen for test event”. ' +
+          'For everyday use take the Production URL — the same address with /webhook/ instead of /webhook-test/.');
+  }
+
+  var due = pendingWork(ALL);
+  var b = $('#runEngine');
+  b.classList.add('busy');
+  b.textContent = auto ? 'Pass 1 — press to stop' : 'Working… press to stop';
+
+  WATCH = {
+    auto: !!auto, pass: 1,
+    before: workSignature(ALL),
+    sig: workSignature(ALL),
+    lastProgress: Date.now(),   // when the database last moved; the stall detector reads this
+    started: Date.now(),        // per-pass clock
+    startedAll: Date.now(),     // whole-run clock, used by the time cap
+    spent: due.reduce(function(s, r){ return s + stepCost(r, nextStep(r).key); }, 0),
+    polls: 0, timer: null, trigger: 'sent'
+  };
+
+  $('#runSummary').innerHTML = '<div class="working">' +
+    (auto ? 'Running until the queue is clear. Each pass moves every row one stage — press the button to stop at any time.'
+          : 'Engine started. Watching the queue — this button releases itself when the stage lands.') +
+    '</div>';
+
+  fireWebhook();
   poll();
+}
+function runEngine(){ startRun(true); }
+function runStage(){ startRun(false); }
+
+/* Start the next pass instead of releasing the button. */
+function nextPass(rows){
+  var due = pendingWork(rows);
+  WATCH.pass++;
+  WATCH.before = workSignature(rows);
+  WATCH.sig = WATCH.before;
+  WATCH.lastProgress = Date.now();
+  WATCH.started = Date.now();
+  WATCH.polls = 0;
+  WATCH.spent += due.reduce(function(s, r){ return s + stepCost(r, nextStep(r).key); }, 0);
+
+  $('#runEngine').textContent = 'Pass ' + WATCH.pass + ' — press to stop';
+  $('#runSummary').innerHTML = '<div class="working">' +
+    '<strong>Pass ' + WATCH.pass + '</strong> of up to ' + AUTO_MAX_PASSES + '. ' +
+    '<span class="num">' + due.length + '</span> row' + (due.length === 1 ? '' : 's') +
+    ' still to move' + (WATCH.spent ? ', <span class="num">$' + WATCH.spent.toFixed(2) + '</span> spent so far this run' : '') +
+    '.</div>';
+
+  fireWebhook();
+  WATCH.timer = setTimeout(poll, 6000);
+}
+
+/* Why the auto run should stop, or '' to keep going. Kept as one pure function
+   so the caps can be tested without a browser. */
+function autoStopReason(w){
+  if (!w || !w.auto) return 'not an auto run';
+  if (w.pass >= AUTO_MAX_PASSES) return 'the ' + AUTO_MAX_PASSES + '-pass limit';
+  if (Date.now() - w.startedAll >= AUTO_MAX_MS) return 'the ' + Math.round(AUTO_MAX_MS / 60000) + '-minute limit';
+  if (w.spent >= AUTO_MAX_SPEND) return 'the $' + AUTO_MAX_SPEND + ' limit for one run';
+  return '';
 }
 
 function poll(){
@@ -944,8 +1098,18 @@ function poll(){
   loadAll().then(function(rows){
     if (!WATCH) return;
     var flying = inFlight(rows);
-    if (flying) WATCH.sawFlight = true;
-    var changed = workSignature(rows) !== WATCH.before;
+    var sig = workSignature(rows);
+
+    /* Progress is "the database moved, or something is generating right now", and
+       it is measured from the LAST time it happened - not from whether it ever
+       happened. The old code latched a sawFlight flag the first time it saw a row
+       generating and then never re-armed the stall detector, so one brief lock at
+       the start of a run bought the whole run twelve minutes of silence. */
+    if (sig !== WATCH.sig || flying){
+      WATCH.sig = sig;
+      WATCH.lastProgress = Date.now();
+    }
+    var changed = sig !== WATCH.before;
     var mins = Math.round((Date.now() - WATCH.started) / 60000);
     var secs = Math.round((Date.now() - WATCH.started) / 1000);
 
@@ -956,10 +1120,11 @@ function poll(){
        generating: the engine is not working on this queue, and counting to twelve
        minutes only wastes the operator's time. Say what is actually wrong. */
     var DEAD_MS = 120000;
-    if (!changed && !flying && !WATCH.sawFlight && Date.now() - WATCH.started > DEAD_MS){
+    if (!flying && Date.now() - WATCH.lastProgress > DEAD_MS){
       var test = /\/webhook-test\//.test(CFG.hook || '');
       var unreadable = WATCH.trigger === 'unreadable';
       stopWatch();
+      if ($('#queueTable')) renderQueueTable(stage('queue'));
 
       /* Nothing changed can mean two completely different things, and saying the
          wrong one sends you to n8n to fix a workflow that is working. Check the
@@ -1011,20 +1176,46 @@ function poll(){
       return;
     }
 
-    // released
-    var b = $('#runEngine');
-    b.classList.remove('busy'); b.disabled = false; b.textContent = 'Run engine now';
-    WATCH = null;
-
+    // ---- the stage landed ----
     var left = pendingWork(rows);
     var moved = stage('review').length;
+    var cooling = rows.filter(coolingOff).sort(function(a,b){ return coolingOff(a) - coolingOff(b); });
+
+    /* Keep going, if this is an auto run, there is still work, and no cap says stop. */
+    if (WATCH.auto && left.length && !timedOut){
+      var capped = autoStopReason(WATCH);
+      if (!capped){ nextPass(rows); return; }
+      var spent = WATCH.spent;
+      stopWatch();
+      if ($('#queueTable')) renderQueueTable(stage('queue'));
+      $('#runSummary').innerHTML = '<div class="note"><strong>Stopped at ' + capped + '.</strong> ' +
+        left.length + ' row' + (left.length === 1 ? '' : 's') + ' still need work' +
+        (spent ? ', about <span class="num">$' + spent.toFixed(2) + '</span> of work was started this run' : '') +
+        '. Press Run again to carry on.</div>';
+      return;
+    }
+
+    var passes = WATCH.pass;
+    stopWatch();
+    if ($('#queueTable')) renderQueueTable(stage('queue'));
     if (timedOut){
       $('#runSummary').innerHTML = '<div class="working" style="border-left-color:var(--crit)">' +
         'Gave up watching after 12 minutes. The engine may still be running — press Refresh in a minute.</div>';
       return;
     }
     if (!left.length){
-      $('#runSummary').innerHTML = '<div class="note good"><strong>Done.</strong> Nothing left for the engine.' +
+      /* Nothing due is not always finished: a row that failed is waiting out its
+         backoff, and saying "Done" about it would be a lie. */
+      if (cooling.length){
+        $('#runSummary').innerHTML = '<div class="note"><strong>Paused — nothing is due yet.</strong> ' +
+          '<span class="num">' + cooling.length + '</span> row' + (cooling.length === 1 ? ' is' : 's are') +
+          ' cooling off after a failed attempt; the engine will not retry before ' +
+          new Date(coolingOff(cooling[0])).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + '. ' +
+          'Check the reason on each under Queue before spending another attempt.</div>';
+        return;
+      }
+      $('#runSummary').innerHTML = '<div class="note good"><strong>Done.</strong> Nothing left for the engine' +
+        (passes > 1 ? ' after ' + passes + ' passes' : '') + '.' +
         (moved ? ' <strong>' + moved + '</strong> post' + (moved === 1 ? ' is' : 's are') + ' waiting under Review &amp; edit.' : '') +
         '</div>';
       return;
@@ -1185,6 +1376,7 @@ $('#clearPublish').addEventListener('click', function(){ clearStage('publish', l
 $('#clearDone').addEventListener('click',    function(){ clearStage('done',    loadDone); });
 $('#reloadQueue').addEventListener('click', function(){ withBusy(this, loadQueue); });
 $('#runEngine').addEventListener('click', runEngine);
+$('#runStage').addEventListener('click', runStage);
 $('#dropDrafts').addEventListener('click', function(){
   dropRows(QUEUE.filter(deletable).map(function(r){ return r.id; }));
 });
